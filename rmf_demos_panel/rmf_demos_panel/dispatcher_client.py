@@ -250,8 +250,10 @@ class DispatcherClient(Node):
             RobotMode.MODE_WAITING: "Waiting-4",
             RobotMode.MODE_EMERGENCY: "Emengency-5",
             RobotMode.MODE_GOING_HOME: "GoingHome-6",
-            RobotMode.MODE_DOCKING: "Dock/Clean-7",
-            RobotMode.MODE_ADAPTER_ERROR: "AdpterError-8"
+            RobotMode.MODE_DOCKING: "Dock-7",
+            RobotMode.MODE_ADAPTER_ERROR: "AdpterError-8",
+            RobotMode.MODE_CLEANING: "Clean-9",
+            RobotMode.MODE_USE_TOOL: "UsingTool-10"
         }
         for bot in robot_states:
             state = {}

@@ -42,21 +42,12 @@ class TaskRequester(Node):
         parser.add_argument('-p', '--pickups', required=True,
                             type=str, nargs='+',
                             help="Pickup names")
-        parser.add_argument('-d', '--dropoffs', required=True,
-                            type=str, nargs='+',
-                            help="Dropoff names")
         parser.add_argument('-ph', '--pickup_handlers', required=True,
                             type=str, nargs='+',
                             help="Pickup handler names")
-        parser.add_argument('-dh', '--dropoff_handlers', required=True,
-                            type=str, nargs='+',
-                            help="Dropoffs handler names")
         parser.add_argument('-pp', '--pickup_payloads',
                             type=str, nargs='+', default=[],
                             help="Pickup payload [sku,quantity sku2,qty...]")
-        parser.add_argument('-dp', '--dropoff_payloads',
-                            type=str, nargs='+', default=[],
-                            help="Dropoff payload [sku,quantity sku2,qty...]")
         parser.add_argument('-F', '--fleet', type=str,
                             help='Fleet name, should define tgt with robot')
         parser.add_argument('-R', '--robot', type=str,
@@ -79,11 +70,6 @@ class TaskRequester(Node):
                 "Invalid pickups, [-p] should have the same length as [-ph]")
             parser.print_help()
             sys.exit(1)
-        if (len(self.args.dropoffs) != len(self.args.dropoff_handlers)):
-            self.get_logger().error(
-                "Invalid dropoffs, [-d] should have the same length as [-dh]")
-            parser.print_help()
-            sys.exit(1)
 
         transient_qos = QoSProfile(
             history=History.KEEP_LAST,
@@ -102,7 +88,7 @@ class TaskRequester(Node):
 
         # Construct task
         msg = ApiRequest()
-        msg.request_id = "delivery_" + str(uuid.uuid4())
+        msg.request_id = "pickup_" + str(uuid.uuid4())
         payload = {}
         if self.args.fleet and self.args.robot:
             self.get_logger().info("Using 'robot_task_request'")
@@ -124,72 +110,41 @@ class TaskRequester(Node):
             if index < len(self.args.pickup_payloads):
                 sku_qty = self.args.pickup_payloads[index].split(',')
                 assert len(sku_qty) == 3, \
-                    "please specify sku, qty and its compartment for pickup payload"
+                    "please specify sku and qty for pickup payload"
                 payload = [{"sku": sku_qty[0],
                             "quantity": int(sku_qty[1]), "compartment": sku_qty[2]}]
-                compartment = sku_qty[2]
             else:
                 payload = []
-                compartment = ""
 
             return {
                     "place": self.args.pickups[index],
                     "handler": self.args.pickup_handlers[index],
-                    "payload": payload,
-                    "compartment": compartment
+                    "payload": payload
                     }
 
-        def __create_dropoff_desc(index):
-            if index < len(self.args.dropoff_payloads):
-                sku_qty = self.args.dropoff_payloads[index].split(',')
-                assert len(sku_qty) == 3, \
-                    "please specify sku, qty and its compartment for dropoff payload"
-                payload = [{"sku": sku_qty[0],
-                            "quantity": int(sku_qty[1]), "compartment": sku_qty[2]}]
-                compartment = sku_qty[2]
+        # Define multi_delivery with request category compose
+        request["category"] = "compose"
 
-            else:
-                payload = []
-                compartment = ""
+        # Define task request description with phases
+        description = {}  # task_description_Compose.json
+        description["category"] = "multi_delivery"
+        description["phases"] = []
+        activities = []
+        # Add each pickup
+        for i in range(0, len(self.args.pickups)):
+            activities.append({
+                "category": "pickup",
+                "description": __create_pickup_desc(i)})
+        # Add activities to phases
+        description["phases"].append(
+            {"activity": {
+                "category": "sequence",
+                "description": {"activities": activities}}})
 
-            return {
-                    "place": self.args.dropoffs[index],
-                    "handler": self.args.dropoff_handlers[index],
-                    "payload": payload,
-                    "compartment": compartment
-                    }
+        request["description"] = description
+        payload["request"] = request
+        msg.json_msg = json.dumps(payload)
 
-        # Use standard delivery task type
-        if len(self.args.pickups) == 1 and len(self.args.dropoffs) == 1:
-            request["category"] = "delivery"
-            description = {
-                "pickup": __create_pickup_desc(0),
-                "dropoff": __create_dropoff_desc(0)
-                }
-        else:
-            # Define multi_delivery with request category compose
-            request["category"] = "compose"
-
-            # Define task request description with phases
-            description = {}  # task_description_Compose.json
-            description["category"] = "multi_delivery"
-            description["phases"] = []
-            activities = []
-            # Add each pickup
-            for i in range(0, len(self.args.pickups)):
-                activities.append({
-                    "category": "pickup",
-                    "description": __create_pickup_desc(i)})
-            # Add each dropoff
-            for i in range(0, len(self.args.dropoffs)):
-                activities.append({
-                    "category": "dropoff",
-                    "description": __create_dropoff_desc(i)})
-            # Add activities to phases
-            description["phases"].append(
-                {"activity": {
-                    "category": "sequence",
-                    "description": {"activities": activities}}})
 
         request["description"] = description
         payload["request"] = request
@@ -217,7 +172,7 @@ def main(argv=sys.argv):
 
     task_requester = TaskRequester(args_without_ros)
     rclpy.spin_until_future_complete(
-        task_requester, task_requester.response, timeout_sec=10.0)
+        task_requester, task_requester.response, timeout_sec=5.0)
     if task_requester.response.done():
         print(f'Got response:\n{task_requester.response.result()}')
     else:
